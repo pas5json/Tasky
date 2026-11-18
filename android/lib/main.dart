@@ -1,23 +1,12 @@
+// Legacy entry point.
+//
+// All app code now lives in the project-root `lib/` folder. This file exists
+// only so an older IDE run configuration that still points here launches the
+// same, current app instead of a stale copy.
 import 'package:flutter/material.dart';
-import 'screens/login_screen.dart';
+
+import 'package:ags_flutter_starter/main.dart' as app;
 
 void main() {
-  runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Tasky - To-Do List App',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        primaryColor: Colors.black,
-      ),
-      home: const LoginScreen(),
-    );
-  }
+  runApp(const app.MyApp());
 }
