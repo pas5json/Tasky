@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-class SignUpScreen extends StatefulWidget {
-  final void Function(String name, String email) onAccountCreated;
+import 'package:ags_flutter_starter/team_crud_template.dart';
 
-  const SignUpScreen({super.key, required this.onAccountCreated});
+import 'signup_screen.dart';
+import 'forgot_password_screen.dart';
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
 
   @override
-  State<SignUpScreen> createState() => _SignUpScreenState();
+  State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _SignUpScreenState extends State<SignUpScreen> {
-  // --- Shared strong-password helpers (same rules as LoginScreen) ---------
+class _LoginScreenState extends State<LoginScreen> {
+  // --- Same strong-password helpers/policy as SignUpScreen -----------------
 
   static bool _hasUppercase(String password) =>
       RegExp(r'[A-Z]').hasMatch(password);
@@ -20,9 +24,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
   static bool _hasSpecialCharacter(String password) =>
       RegExp(r'[^A-Za-z0-9]').hasMatch(password);
 
-  /// Password policy used by BOTH the Sign Up and Login screens:
-  /// at least 8 characters with an uppercase letter, a lowercase letter,
-  /// a number, and a special character.
+  /// Identical policy to the Sign Up screen: at least 8 characters with an
+  /// uppercase letter, a lowercase letter, a number, and a special character.
   static String? _validatePassword(String? value) {
     final password = value ?? '';
     if (password.isEmpty) {
@@ -57,137 +60,81 @@ class _SignUpScreenState extends State<SignUpScreen> {
             r'One special character (!@#$%...)', _hasSpecialCharacter(password)),
       ];
 
-  static int _strengthScore(String password) {
-    var score = 0;
-    if (password.length >= 8) score++;
-    if (password.length >= 12) score++;
-    if (_hasUppercase(password) && _hasLowercase(password)) score++;
-    if (_hasDigit(password)) score++;
-    if (_hasSpecialCharacter(password)) score++;
-    return score;
-  }
-
-  String? _validateName(String? value) {
-    final name = value?.trim() ?? '';
-    if (name.isEmpty) {
-      return 'Please enter your full name';
-    }
-    if (name.length < 3) {
-      return 'Name must be at least 3 characters';
-    }
-    return null;
-  }
-
   String? _validateEmail(String? value) {
-    final email = value?.trim() ?? '';
-    if (email.isEmpty) {
-      return 'Please enter your email address';
+    final identifier = value?.trim() ?? '';
+    if (identifier.isEmpty) {
+      return 'Please enter your email or phone';
     }
     final emailRegex = RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$');
-    if (!emailRegex.hasMatch(email)) {
-      return 'Please enter a valid email (e.g. name@example.com)';
-    }
-    return null;
-  }
-
-  String? _validateRetypePassword(String? value) {
-    if ((value ?? '').isEmpty) {
-      return 'Please retype your password';
-    }
-    if (value != _passwordController.text) {
-      return 'Passwords do not match';
+    final phoneRegex = RegExp(r'^\+?\d{9,15}$');
+    if (!emailRegex.hasMatch(identifier) && !phoneRegex.hasMatch(identifier)) {
+      return 'Enter a valid email or phone number';
     }
     return null;
   }
 
   final _formKey = GlobalKey<FormState>();
-  late final TextEditingController _nameController;
   late final TextEditingController _emailController;
   late final TextEditingController _passwordController;
-  late final TextEditingController _retypePasswordController;
   bool _obscurePassword = true;
-  bool _obscureRetype = true;
 
-  /// Lifecycle: create all four text controllers before the first build.
+  /// Lifecycle: create both text controllers before the first build.
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController();
     _emailController = TextEditingController();
     _passwordController = TextEditingController();
-    _retypePasswordController = TextEditingController();
   }
 
   /// Lifecycle: release the controllers when this screen leaves the tree.
   @override
   void dispose() {
-    _nameController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _retypePasswordController.dispose();
     super.dispose();
   }
 
 
 
-  /// Live feedback under the password field: a strength meter plus a
-  /// requirements checklist that ticks off each rule as the user types.
-  Widget _buildPasswordStrengthAndChecklist() {
+  Future<void> _submit() async {
+    final isValid = _formKey.currentState?.validate() ?? false;
+    if (!isValid) return;
+
+    final email = _emailController.text.trim();
+    // "veronica@gmail.com" -> "veronica" for the dashboard greeting.
+    final displayName = email.split('@').first;
+
+    // Week 14 local storage: remember who signed in, even after a restart.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('user_name', displayName);
+      await prefs.setBool(loggedInKey, true);
+    } catch (_) {}
+
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => DashboardScreen(initialUserName: displayName),
+      ),
+    );
+  }
+
+  /// Live requirements checklist under the login password field, mirroring
+  /// the Sign Up policy. Fades in once the user starts typing; a green tick
+  /// means that rule is satisfied. Once every rule passes, it collapses away.
+  Widget _buildPasswordChecklist() {
     final password = _passwordController.text;
     if (password.isEmpty) return const SizedBox.shrink();
 
-    final score = _strengthScore(password);
-    String strengthLabel;
-    Color strengthColor;
-    if (score <= 1) {
-      strengthLabel = 'Weak';
-      strengthColor = const Color(0xFFEF9A9A);
-    } else if (score == 2) {
-      strengthLabel = 'Fair';
-      strengthColor = const Color(0xFFFFCC80);
-    } else if (score == 3) {
-      strengthLabel = 'Good';
-      strengthColor = const Color(0xFFFFF59D);
-    } else {
-      strengthLabel = 'Strong';
-      strengthColor = const Color(0xFFA5D6A7);
-    }
+    final allMet = _passwordRules(password).every((rule) => rule.value);
+    if (allMet) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.only(top: 8, left: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Row(
-                  children: List.generate(5, (index) {
-                    return Expanded(
-                      child: Container(
-                        height: 4,
-                        margin: EdgeInsets.only(right: index == 4 ? 8 : 4),
-                        decoration: BoxDecoration(
-                          color:
-                              index < score ? strengthColor : Colors.white24,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                    );
-                  }),
-                ),
-              ),
-              Text(
-                strengthLabel,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: strengthColor,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
           ..._passwordRules(password).map(
             (rule) => Padding(
               padding: const EdgeInsets.only(bottom: 2),
@@ -220,16 +167,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
           ),
         ],
       ),
-    );
-  }
-
-  void _submit() {
-    final isValid = _formKey.currentState?.validate() ?? false;
-    if (!isValid) return;
-
-    widget.onAccountCreated(
-      _nameController.text.trim(),
-      _emailController.text.trim(),
     );
   }
 
@@ -275,48 +212,56 @@ class _SignUpScreenState extends State<SignUpScreen> {
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: isWide ? 480 : double.infinity),
+            constraints: BoxConstraints(maxWidth: isWide ? 420 : double.infinity),
             child: SingleChildScrollView(
               padding: EdgeInsets.symmetric(
                 horizontal: isWide ? 32 : 24,
-                vertical: 24,
+                vertical: 32,
               ),
               child: Form(
                 key: _formKey,
-                autovalidateMode: AutovalidateMode.disabled,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      "Let's Create Your Account",
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        height: 1.3,
+                    Container(
+                      width: 80,
+                      height: 80,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFB8E6DC),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Icon(
+                        Icons.menu_book,
+                        color: Color(0xFF3FA499),
+                        size: 40,
                       ),
                     ),
-                    const SizedBox(height: 32),
-                    TextFormField(
-                      controller: _nameController,
-                      validator: _validateName,
-                      textInputAction: TextInputAction.next,
-                      keyboardType: TextInputType.name,
-                      autocorrect: false,
-                      style: const TextStyle(color: Colors.white),
-                      decoration:
-                          _inputDecoration('Full Name', Icons.person),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Tasky',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFFD4A574),
+                      ),
                     ),
-                    const SizedBox(height: 16),
+                    const Text(
+                      'TO-DO-LIST APP',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFFB8E6DC),
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 40),
                     TextFormField(
                       controller: _emailController,
                       validator: _validateEmail,
-                      textInputAction: TextInputAction.next,
                       keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
                       autocorrect: false,
                       style: const TextStyle(color: Colors.white),
-                      decoration:
-                          _inputDecoration('Email Address', Icons.email),
+                      decoration: _inputDecoration('Email or Phone', Icons.person),
                     ),
                     const SizedBox(height: 16),
                     TextFormField(
@@ -324,7 +269,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       validator: _validatePassword,
                       onChanged: (_) => setState(() {}),
                       obscureText: _obscurePassword,
-                      textInputAction: TextInputAction.next,
+                      textInputAction: TextInputAction.done,
+                      onFieldSubmitted: (_) => _submit(),
                       style: const TextStyle(color: Colors.white),
                       decoration: _inputDecoration('Password', Icons.lock)
                           .copyWith(
@@ -340,31 +286,31 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         ),
                       ),
                     ),
-                    _buildPasswordStrengthAndChecklist(),
+                    _buildPasswordChecklist(),
                     const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _retypePasswordController,
-                      validator: _validateRetypePassword,
-                      obscureText: _obscureRetype,
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _submit(),
-                      style: const TextStyle(color: Colors.white),
-                      decoration: _inputDecoration(
-                          'Retype Password', Icons.lock_rounded)
-                          .copyWith(
-                        suffixIcon: IconButton(
-                          onPressed: () =>
-                              setState(() => _obscureRetype = !_obscureRetype),
-                          icon: Icon(
-                            _obscureRetype
-                                ? Icons.visibility_off
-                                : Icons.visibility,
-                            color: const Color(0xFFB8E6DC),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const ForgotPasswordScreen(),
+                            ),
+                          );
+                        },
+                        child: const Text(
+                          'Forgot Password?',
+                          style: TextStyle(
+                            color: Color(0xFFB8E6DC),
+                            fontSize: 12,
+                            decoration: TextDecoration.underline,
+                            decorationColor: Color(0xFFB8E6DC),
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 32),
                     SizedBox(
                       width: double.infinity,
                       height: 48,
@@ -377,7 +323,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           ),
                         ),
                         child: const Text(
-                          'Sign Up',
+                          'Log in / Sign up',
                           style: TextStyle(
                             color: Color(0xFF3FA499),
                             fontSize: 14,
@@ -386,24 +332,99 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Divider(color: Color(0xFFB8E6DC)),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text('or',
+                              style: TextStyle(
+                                  color: Color(0xFFB8E6DC).withValues(alpha: 0.9))),
+                        ),
+                        const Expanded(
+                          child: Divider(color: Color(0xFFB8E6DC)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.pushReplacement(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const DashboardScreen(
+                                  initialUserName: 'Guest'),
+                            ),
+                          );
+                        },
+                        style: OutlinedButton.styleFrom(
+                          side:
+                              const BorderSide(color: Color(0xFFB8E6DC), width: 1),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text(
+                          'Continue without an account',
+                          style: TextStyle(
+                            color: Color(0xFFB8E6DC),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 32),
                     Center(
                       child: Wrap(
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           const Text(
-                            'Have an account? ',
-                            style: TextStyle(
-                                color: Color(0xFFB8E6DC), fontSize: 12),
+                            "Don't have an account? ",
+                            style: TextStyle(color: Color(0xFFB8E6DC), fontSize: 13),
                           ),
                           GestureDetector(
-                            onTap: () => Navigator.pop(context),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => SignUpScreen(
+                                    onAccountCreated: (name, email) async {
+                                      final displayName =
+                                          name.trim().split(' ').first;
+                                      try {
+                                        final prefs = await SharedPreferences
+                                            .getInstance();
+                                        await prefs.setString(
+                                            'user_name', displayName);
+                                        await prefs
+                                            .setBool(loggedInKey, true);
+                                      } catch (_) {}
+                                      if (!context.mounted) return;
+                                      Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (context) => DashboardScreen(
+                                            initialUserName: displayName,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              );
+                            },
                             child: const Text(
-                              'Sign In',
+                              'Sign Up',
                               style: TextStyle(
                                 color: Color(0xFFD4A574),
                                 fontWeight: FontWeight.bold,
-                                fontSize: 12,
                                 decoration: TextDecoration.underline,
                                 decorationColor: Color(0xFFD4A574),
                               ),
